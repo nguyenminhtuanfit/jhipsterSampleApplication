@@ -1,0 +1,16 @@
+{
+    "login": "admin",
+
+    "first_name": "Administrator",
+    "last_name": "Administrator",
+    "email": "admin@localhost",
+    "activated": true,
+    "lang_key": "fr",
+    "created_by": "system",
+    "last_modified_by": "system",
+    "authorities": [
+        "ROLE_USER",
+        "ROLE_ADMIN"
+    ],
+    "_class": "io.github.jhipster.application.domain.User"
+}
