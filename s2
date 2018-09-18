@@ -1,0 +1,209 @@
+package main
+
+import (
+	"fmt"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awsutil"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"log"
+	"os"
+	"strings"
+	"time"
+)
+
+type ObjVersion struct {
+	ETag         string    `type:"string"`
+	IsLatest     bool      `type:"boolean"`
+	Key          string    `min:"1" type:"string"`
+	LastModified time.Time `type:"timestamp"`
+	Size         int64     `type:"integer"`
+	VersionId    string    `type:"string"`
+}
+
+//type ObjVersions []ObjVersion
+
+func Client() *s3.S3 {
+	token := ""
+	creds := credentials.NewStaticCredentials(aws_access_key_id, aws_secret_access_key, token)
+	_, err := creds.Get()
+	if err != nil {
+		// handle error
+	}
+	cfg := aws.NewConfig().WithRegion("ap-southeast-1").WithCredentials(creds)
+	session := session.Must(session.NewSession(cfg))
+	return s3.New(session)
+}
+
+func ListBucket() {
+	result, err := Client().ListBuckets(&s3.ListBucketsInput{})
+	if err != nil {
+		fmt.Println("Failed to list buckets", err)
+		return
+	}
+
+	fmt.Println("Buckets:")
+	for _, bucket := range result.Buckets {
+		fmt.Printf("%s : %s\n", aws.StringValue(bucket.Name), bucket.CreationDate)
+	}
+}
+
+func ListKey(bucket string, prefix string, delimiter string, maxkey int64) {
+	inputparams := &s3.ListObjectsInput{
+		Bucket:    aws.String(bucket),
+		MaxKeys:   aws.Int64(maxkey),
+		Prefix:    aws.String(prefix),
+		Delimiter: aws.String(delimiter),
+	}
+	pageNum := 0
+	Client().ListObjectsPages(inputparams, func(page *s3.ListObjectsOutput, lastPage bool) bool {
+		fmt.Println("Page", pageNum)
+		pageNum++
+		for _, value := range page.Contents {
+			fmt.Println(*value.Key)
+		}
+		fmt.Println("pageNum", pageNum, "lastPage", lastPage)
+
+		// return if we should continue with the next page
+		return true
+	})
+}
+
+func ListObjectListing(bucket string, prefix string, maxkey int64) {
+	//query := &s3.ListObjectsV2Input{
+	//	Bucket: aws.String(os.Args[2]),
+	//}
+
+}
+
+//generate signed URIs for a GET and PUT object for the whole objects, but we're unable to generate a URI for listing all available versions.
+
+func ListObjectVersions(bucket string, prefix string, maxkey int64) {
+	query := &s3.ListObjectVersionsInput{
+		Bucket:  aws.String(bucket),
+		Prefix:  aws.String(prefix),
+		MaxKeys: aws.Int64(maxkey),
+	}
+	objVersions := []ObjVersion{}
+	truncatedListing := true
+	for truncatedListing {
+		resp, err := Client().ListObjectVersions(query)
+		if err != nil {
+			fmt.Println(err.Error())
+			return
+		}
+		for _, objVer := range resp.Versions {
+			objVersion := ObjVersion{
+				Key:          *objVer.Key,
+				VersionId:    *objVer.VersionId,
+				LastModified: *objVer.LastModified,
+				IsLatest:     *objVer.IsLatest,
+				Size:         *objVer.Size,
+				ETag:         *objVer.ETag,
+			}
+			objVersions = append(objVersions, objVersion)
+		}
+		query.KeyMarker = resp.NextKeyMarker
+		query.VersionIdMarker = resp.NextVersionIdMarker
+		fmt.Print(*resp.IsTruncated)
+		truncatedListing = *resp.IsTruncated
+	}
+	fmt.Println(awsutil.Prettify(objVersions))
+
+}
+
+func makeSession(profile string) *session.Session {
+	// Enable loading shared config file
+	os.Setenv("AWS_SDK_LOAD_CONFIG", "1")
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Config:  aws.Config{Region: aws.String("eu-west-1")},
+		Profile: profile,
+	})
+	if err != nil {
+		fmt.Println("failed to create session,", err)
+		fmt.Println(err)
+		os.Exit(2)
+	}
+
+	return sess
+	return nil
+}
+
+func getBucketObjects(bucket string) {
+	query := &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	}
+	svc := Client()
+
+	// Flag used to check if we need to go further
+	truncatedListing := true
+
+	for truncatedListing {
+		resp, err := svc.ListObjectsV2(query)
+
+		if err != nil {
+			// Print the error.
+			fmt.Println(err.Error())
+			return
+		}
+		// Get all files
+		getObjectsAll(resp, svc, bucket)
+		// Set continuation token
+		query.ContinuationToken = resp.NextContinuationToken
+		truncatedListing = *resp.IsTruncated
+	}
+}
+
+// To hold the number retrieved files
+var numberOfRetrievedFiles = 0
+
+func getObjectsAll(bucketObjectsList *s3.ListObjectsV2Output, s3Client *s3.S3, bucket string) {
+	for _, key := range bucketObjectsList.Contents {
+		fmt.Println(*key.Key)
+		destFilename := *key.Key
+		if strings.HasSuffix(*key.Key, "/") {
+			fmt.Println("Got a directory")
+			continue
+		}
+		numberOfRetrievedFiles++
+		if strings.Contains(*key.Key, "/") {
+			var dirTree string
+			// split
+			s3FileFullPathList := strings.Split(*key.Key, "/")
+			fmt.Println(s3FileFullPathList)
+			fmt.Println("destFilename " + destFilename)
+			for _, dir := range s3FileFullPathList[:len(s3FileFullPathList)-1] {
+				dirTree += "/" + dir
+			}
+			//os.MkdirAll("/app/"+"/"+dirTree, 0775)
+		}
+		out, err := s3Client.GetObject(&s3.GetObjectInput{
+			Bucket: aws.String(bucket),
+			Key:    key.Key,
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		//destFilePath := "/app/" + destFilename
+		//destFile, err := os.Create(destFilePath)
+		//if err != nil {
+		//	log.Fatal(err)
+		//}
+		//bytes, err := io.Copy(destFile, out.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+		//fmt.Printf("File %s contanin %d bytes\n", destFilePath, bytes)
+		out.Body.Close()
+		//destFile.Close()
+	}
+}
+func main() {
+	////log.Printf("MongoDB dial err %v\n", result.DeleteMarkers)
+
+	//ListObjectVersions("nmtfit", "media/README 2.md", 1)
+	//ListBucket()
+	//ListKey("nmtfit", "media/", "/", 10)
+	getBucketObjects("nmtfit")
+}
