@@ -1,0 +1,105 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+
+	"github.com/gorilla/mux"
+)
+
+// our main function
+func main() {
+	fmt.Print("Hello9999")
+
+	router := mux.NewRouter()
+	router.HandleFunc("/", ArticlesCategoryHandler).Methods("GET")
+	log.Fatal(http.ListenAndServe(":8000", router))
+
+	//http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+	//	fmt.Fprint(writer, "Hello, World 55555")
+	//})
+	//log.Fatal(http.ListenAndServe(":3000", nil))
+
+}
+
+func ArticlesCategoryHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "Hello, World 55555")
+	w.WriteHeader(http.StatusOK)
+}
+
+
+#FROM golang:latest
+#
+#RUN mkdir /app
+#WORKDIR /app
+#COPY . .
+#RUN go build -o main .
+#
+#CMD ["/app/main"]
+
+
+#FROM golang
+#ADD . ./
+#RUN go build -o main
+#ENV PORT 3000
+#EXPOSE 3000
+#CMD [“/main”]
+
+
+
+FROM instrumentisto/glide as builder
+
+# Download and install the latest release of dep
+ADD https://github.com/golang/dep/releases/download/v0.4.1/dep-linux-amd64 /usr/bin/dep
+RUN chmod +x /usr/bin/dep
+
+
+# Copy the code from the host and compile it
+#WORKDIR $GOPATH/src/github.com/username/repo
+#COPY Gopkg.toml Gopkg.lock ./
+#RUN dep ensure --vendor-only
+#COPY . ./
+#RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix nocgo -o /app .
+
+WORKDIR /go/src/demo
+COPY Gopkg.toml Gopkg.lock ./
+RUN dep ensure --vendor-only
+COPY . .
+#RUN glide install
+RUN CGO_ENABLED=0 GOOS=linux go build -a -tags sctratch-exampl -o build/demo -ldflags '-w' .
+
+
+#WORKDIR /go/src/demo
+#COPY . .
+#RUN glide install
+#RUN CGO_ENABLED=0 GOOS=linux go build -a -tags sctratch-exampl -o build/demo -ldflags '-w' .
+
+FROM scratch
+COPY --from=builder /go/src/demo/build/demo app
+ENV PORT 3000
+EXPOSE 3000
+ENTRYPOINT ["/app"]
+
+
+
+#FROM golang:1.8.3 as builder
+#WORKDIR /go/src/github.com/flaviocopes/findlinks
+#RUN go get -d -v golang.org/x/net/html
+#COPY findlinks.go  .
+#RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o findlinks .
+#
+#FROM alpine:latest
+#RUN apk --no-cache add ca-certificates
+#WORKDIR /root/
+#COPY --from=builder /go/src/github.com/flaviocopes/findlinks/findlinks .
+#CMD ["./findlinks"]
+
+
+
+https://medium.com/@pierreprinetti/the-go-dockerfile-d5d43af9ee3c
+https://blog.kloia.com/micro-docker-images-for-go-applications-8a8701130c01
+
+docker run --rm -p 8080:8000 demo
+
+docker build -t demo .
