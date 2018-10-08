@@ -1,0 +1,102 @@
+#FROM golang:latest
+#
+#RUN mkdir /app
+#WORKDIR /app
+#COPY . .
+#RUN go build -o main .
+#
+#CMD ["/app/main"]
+
+
+#FROM golang
+#ADD . ./
+#RUN go build -o main
+#ENV PORT 3000
+#EXPOSE 3000
+#CMD [“/main”]
+
+
+
+#FROM instrumentisto/glide as builder
+#WORKDIR /go/src/github.com/go-scratch-example
+#COPY . .
+#RUN glide install
+#RUN CGO_ENABLED=0 GOOS=linux go build -a -tags sctratch-exampl -o build/go-scratch-example -ldflags '-w' .
+#
+#FROM scratch
+#COPY --from=builder /go/src/github.com/go-scratch-example/build/go-scratch-example app
+#ENV PORT 3000
+#EXPOSE 3000
+#ENTRYPOINT ["/app"]
+
+
+
+#FROM golang:1.8.3 as builder
+#WORKDIR /go/src/github.com/flaviocopes/findlinks
+#RUN go get -d -v golang.org/x/net/html
+#COPY findlinks.go  .
+#RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o findlinks .
+#
+#FROM alpine:latest
+#RUN apk --no-cache add ca-certificates
+#WORKDIR /root/
+#COPY --from=builder /go/src/github.com/flaviocopes/findlinks/findlinks .
+#CMD ["./findlinks"]
+
+
+
+Build the GoLang binary locally
+sudo apt-get install git -y
+$ mkdir -p $GOPATH/src; cd $_
+$ git clone https://github.com/fabianlee/docker-my-hello-world-golang.git
+$ cd docker-my-hello-world-golang
+
+Then build the static, non-linked binary using the instructions below:
+$ export CGO_ENABLED=0
+$ go build -o main .
+$ ./main
+hello, world
+$ ldd ./main
+       not a dynamic executable
+
+Put Binary into scratch container
+an explicitly empty image, especially for building images "FROM scratch"
+FROM scratch
+COPY hello /
+CMD ["/hello"]
+
+
+FROM scratch
+ADD main /
+CMD ["/main"]
+
+Build/run the image:
+$ docker build -t my-hello-world-scratch -f Dockerfile.scratch .
+$ docker run -it my-hello-world-scratch
+hello, world
+
+
+Put binary into Alpine container
+Instead of using the scratch image, let’s try a base image called “alpine” that is purpose made to be very small (~5Mb) but still maintain some tools and utilities that make working within a container possible.
+Below is the Dockerfile.alpine which copies the “main” executable to the /app path.
+FROM alpine:latest
+RUN mkdir /app
+WORKDIR /app
+COPY . .
+CMD ["/app/main"]
+Build/run the image:
+$ docker build -t my-hello-world-alpine -f Dockerfile.alpine .
+$ docker run -it my-hello-world-alpine
+hello, world
+And check the image size:
+$ docker images
+ REPOSITORY TAG IMAGE ID CREATED SIZE
+ my-hello-world-alpine latest 65de4ed20940 19 seconds ago 6.17MB
+ my-hello-world-scratch latest cee1f1ea8163 2 minutes ago 2.02MB
+ my-hello-world latest f447222c719e 22 minutes ago 798MB
+
+
+removes stopped containers
+docker rm $(docker ps -aq)
+removes all stopped containers, volumes not used, images without container associated
+docker system prune
