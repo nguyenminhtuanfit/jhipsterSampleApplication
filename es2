@@ -1,0 +1,68 @@
+http://localhost:9200/tuan
+
+{
+  "settings": {
+    "analysis": {
+			"filter":{
+				"ngram_filter":{
+					"type": "ngram",
+					"min_gram": 2,
+					"max_gram": 4
+				}
+			},
+      "analyzer": {
+        "ngram_analyzer": {
+          "type": "custom",
+					"tokenizer": "standard",
+					"filter" : [
+						"lowercase",
+						"ngram_filter"
+					]
+        }
+      }
+		}
+  },
+	"mapping":{
+		"profile": {
+			"_all":{
+				"type": "string", 
+				"analyzer": "ngram_analyzer"
+			}
+		}
+	}
+}
+
+http://localhost:9200/tuan/_mapping
+{
+	"mapping":{
+		"profile": {
+			"_all":{
+				"type": "string", 
+				"analyzer": "ngram_analyzer"
+			}
+		}
+	}
+}
+
+
+http://localhost:9200/tuan/profile/1
+{
+	"firstName": "Tuan",
+	"lastName": "Nguyen",
+	"address": "15 JooSend Road",
+	"professtion": "Java developer, web developer, software engineering",
+	"skill": "PHP, JAVA, AngularJS"
+}
+
+
+http://localhost:9200/tuan/profile/_search
+{
+    "query": {
+        "match": {
+            "_all": "Tuan"
+        }
+    }
+}
+
+
+https://www.youtube.com/watch?time_continue=104&v=ZO7SBXcdBKw
