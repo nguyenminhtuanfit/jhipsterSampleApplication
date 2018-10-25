@@ -1,0 +1,102 @@
+http://localhost:9200/test_index_new
+
+{
+   "settings": {
+      "analysis": {
+         "filter": {
+            "edge_ngram_filter": {
+               "type": "ngram",
+               "min_gram": 2,
+               "max_gram": 20
+            }
+         },
+         "analyzer": {
+            "edge_ngram_analyzer": {
+               "type": "custom",
+               "tokenizer": "standard",
+               "filter": [
+                  "lowercase",
+                  "edge_ngram_filter"
+               ]
+            }
+         }
+      }
+   },
+   "mappings": {
+      "doc": {
+         "properties": {
+            "professtion": {
+               "type": "text",
+               "analyzer": "edge_ngram_analyzer",
+               "search_analyzer": "standard"
+            }
+         }
+      }
+   }
+}
+
+
+http://localhost:9200/test_index_new/doc/1
+{
+	"firstName": "Tuan",
+	"lastName": "Nguyen",
+	"address": "15 JooSend Road",
+	"professtion": "Java developer, web developer, software engineering",
+	"skill": "PHP, JAVA, AngularJS"
+}
+
+
+
+{
+    "query": {
+        "match": {
+            "professtion": "lop"
+        }
+    }
+}
+
+
+
+{
+   "settings": {
+      "analysis": {
+         "filter": {
+            "edge_ngram_filter": {
+               "type": "edge_ngram",
+               "min_gram": 2,
+               "max_gram": 20
+            }
+         },
+         "analyzer": {
+            "edge_ngram_analyzer": {
+               "type": "custom",
+               "tokenizer": "standard",
+               "filter": [
+                  "lowercase",
+                  "edge_ngram_filter"
+               ]
+            }
+         }
+      }
+   },
+   "mappings": {
+      "doc": {
+            "_all": {
+               "type": "string",
+               "analyzer": "edge_ngram_analyzer",
+               "search_analyzer": "standard"
+            }
+         }
+      
+   }
+}
+
+
+"mappings":{
+		"profile": {
+			"_all":{
+				"type": "string", 
+				"analyzer": "my_analyzer"
+			}
+		}
+	}
