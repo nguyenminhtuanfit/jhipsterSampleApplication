@@ -1,0 +1,135 @@
+create external table employees (
+  name varchar(100),
+  gender varchar(10)
+)
+row format delimited
+fields terminated by ','
+lines terminated by '\n'
+location 's3a://bucket-name/employees/';
+apache-hive-2.3.3-bin
+
+export HIVE_HOME="/Users/admin/Desktop/apache-hive-1.2.2-bin"
+export HIVE_HOME="/Users/admin/Desktop/apache-hive-2.3.3-bin"
+
+export PATH=$HIVE_HOME/bin:$PATH
+export HADOOP_HOME="/Users/admin/Desktop/hadoop-2.6.5"
+export HADOOP_USER_CLASSPATH_FIRST=true
+export JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk1.8.0_191.jdk/Contents/Home"
+export HADOOP_USER_CLASSPATH_FIRST=true
+$HIVE_HOME/bin/hive
+
+
+$HADOOP_HOME/bin/hadoop fs -mkdir       /tmp
+$HADOOP_HOME/bin/hadoop fs -mkdir       /user/hive/warehouse
+$HADOOP_HOME/bin/hadoop fs -chmod g+w   /tmp
+$HADOOP_HOME/bin/hadoop fs -chmod g+w   /user/hive/warehouse
+export HIVE_HOME=<hive-install-dir>
+
+export HADOOP_USER_CLASSPATH_FIRST=true
+$HIVE_HOME/bin/hive
+
+
+$HIVE_HOME/bin/schematool -dbType <db type> -initSchema
+$HIVE_HOME/bin/schematool -dbType <db type> -initSchema
+
+
+hive --service metastore --hiveconf hive.root.logger=DEBUG,console
+
+
+
+create external table if not exists user_timestamps_tsv (
+  user_id string,
+  ts string,
+  artist_uuid string,
+  artist_name string,
+  track_uuid string,
+  track_name string
+)
+comment 'lastfm user activities'
+row format delimited
+fields terminated by '\t' -- it's tsv, use ',' for csv
+lines terminated by '\n'
+location 's3a://lastfm-dataset-1k/timestamp-tsv/';
+
+
+create external table employees (
+  name varchar(100),
+  gender varchar(10)
+)
+row format delimited
+fields terminated by ','
+lines terminated by '\n'
+location 's3a://bucket-name/employees/';
+
+
+create external table if not exists user_timestamps_tsv2 ( user_id string,ts string,artist_uuid string, artist_name string, track_uuid string,track_name string) comment 'lastfm user activities' row format delimited fields terminated by '\t' -- it's tsv, use ',' for csv lines terminated by '\n' location 's3a://tuannmfit/1.data.csv.gz/';
+
+create external table if not exists employee1s ( name  string, gender string) row format delimited fields terminated by ',' lines terminated by '\n' location 's3a://tuannmfit/employees/';
+create external table  if not exists employees (name varchar(100), gender varchar(10) ) row format delimited fields terminated by ',' lines terminated by '\n' location 's3a://tuannmfit/employees/';
+
+<configuration>
+    <property>
+        <name>fs.s3a.access.key</name>
+        <value></value>
+    </property>
+    <property>
+        <name>fs.s3a.secret.key</name>
+        <value>5/+ywZk//</value>
+    </property>
+    <property>
+        <name>fs.s3a.connection.ssl.enabled</name>
+        <value>false</value>
+    </property>
+       <property>
+        <name>fs.s3a.imp</name>
+        <value>org.apache.hadoop.fs.s3a.S3A</value>
+    </property>
+    <property>
+        <name>fs.s3a.path.style.access</name>
+        <value>true</value>
+    </property>
+</configuration>
+
+
+SET fs.s3a.access.key="x";
+set fs.s3a.secret.key="5/x+x/x/";
+
+schematool -dbType derby -initSchema
+rm -rf metastore_db/
+
+
+apache-hive-2.3.3-bin
+hadoop-2.6.5
+
+
+<property>  
+ <name>fs.s3a.aws.credentials.provider</name>  
+ <value>  
+ org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider,   
+ org.apache.hadoop.fs.s3a.BasicAWSCredentialsProvider,  
+ com.amazonaws.auth.EnvironmentVariableCredentialsProvider  
+</value>  
+<property>  
+<name>fs.s3a.impl</name>  
+<value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>  
+<description></description>  
+</property>  
+<property>  
+<name>fs.s3a.access.key</name>  
+<value></value>  
+<description>AWS access key ID. Omit for Role-based authentication.       </description>  
+</property>  
+<property>  
+<name>fs.s3a.secret.key</name>  
+<value>5/Ywf/</value>  
+<description>AWS secret key. Omit for Role-based authentication.</description>  
+</property>
+
+create external table employees (
+  name varchar(100),
+  gender varchar(10)
+)
+row format delimited
+fields terminated by ','
+lines terminated by '\n'
+location 's3a://bucket-name/employees/';
