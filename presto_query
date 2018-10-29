@@ -1,0 +1,34 @@
+https://www.starburstdata.com/technical-blog/data-lakes-without-hadoop/
+
+SET hive.metastore.warehouse.dir=/Users/admin/Desktop/hive-warehouse;
+
+
+
+hive --service metastore
+
+
+	CREATE TABLE orders (
+  orderkey bigint,
+  orderstatus varchar,
+  totalprice double,
+  orderdate date
+)
+WITH (format = 'ORC')
+	https://prestodb.io/docs/current/sql/create-table.html
+	
+	
+	CREATE TABLE IF NOT EXISTS tuanm(orderkey  varchar(100),orderstatus varchar) COMMENT 'A table to keep track of orders.'
+	
+INSERT INTO orders2 VALUES ('2', 'San Francisco2');
+
+ POST /v1/statement HTTP/1.1
+> Host: localhost:8080
+> Content-Type: text/plain
+> x-presto-user: user
+> x-presto-catalog: hive
+> x-presto-schema: default
+> X-Presto-Time-Zone: UTC
+> User-Agent: myagent
+> Accept: */*
+> Content-Length: 21
+| select * from orders2
