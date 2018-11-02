@@ -1,0 +1,833 @@
+掃文資訊
+2017-07-02 my.oschina.net
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+在Docker環境成功搭建了Apache Hadoop 2.8 分佈式集羣，並實現了NameNode HA、ResourceManager HA之後（詳見我的另一篇博文： Apache Hadoop 2.8分佈式集羣詳細搭建過程 ），接下來將搭建最新穩定版的Apache Hive 2.1.1，方便日常在自己電腦上測試hive配置和作業，同樣的配置也可以應用於服務器上。以下是Apache Hive 2.1.1的安裝配置詳細過程
+
+1、閲讀Apache Hive官網説明文檔，下載最新版本Hive
+Hive是一個基於Hadoop的數據倉庫工具，將HDFS中的結構化數據映射為數據表，並實現將類SQL腳本轉換為MapReduce作業，從而實現用户只需像傳統關係型數據庫提供SQL語句，並能實現對Hadoop數據的分析和處理，門檻低，非常適合傳統的基於關係型數據庫的數據分析向基於Hadoop的分析進行轉變。因此，Hive是Hadoop生態圈非常重要的一個工具。
+
+安裝配置Apache Hive，最直接的方式，便是閲讀 Apache Hive官網的説明文檔 ，能瞭解到很多有用的信息。Apache Hive 要求JDK 1.7及以上，Hadoop 2.x（從Hive 2.0.0開始便不再支持Hadoop 1.x），Hive 可部署於Linux、Mac、Windows環境。
+
+從官網下載最新穩定版本的 Apache Hive 2.1.1
+
+2、安裝配置Apache Hive
+（1）解壓 hive 壓縮包
+tar -zxvf apache-hive-2.1.1-bin.tar.gz
+（2）配置環境變量
+vi ~/.bash_profile
+
+# 配置hive環境
+export HIVE_HOME=/home/ahadoop/apache-hive-2.1.1-bin
+export HIVE_CONF_DIR=$HIVE_HOME/conf
+export PATH=$PATH:$HIVE_HOME/bin
+
+# 使配置文檔生效
+source ~/.bash_profile
+（3）配置hive-site.xml
+官網給出了 Apache Hive的配置説明 ，Hive的配置支持多種方式，主要如下（以map-reduce臨時目錄配置項 hive.exec.scratchdir 為例）：
+
+第1種，環境變量
+set hive.exec.scratchdir=/tmp/mydir;
+第2種，hive 交互命令的參數（--hiveconf）
+bin/hive --hiveconf hive.exec.scratchdir=/tmp/mydir
+第3種，hive-site.xml配置文檔
+<property>
+  <name>hive.exec.scratchdir</name>
+  <value>/tmp/mydir</value>
+  <description>Scratch space for Hive jobs</description>
+</property>
+第4種，hivemetastore-site.xml, hiveserver2-site.xml 配置文檔
+<property>
+  <name>hive.exec.scratchdir</name>
+  <value>/tmp/mydir</value>
+  <description>Scratch space for Hive jobs</description>
+</property>
+當同時出現多種配置方式時，則按以下優先級生效（越往後，優先級越高）：
+
+hive-site.xml -> hivemetastore-site.xml -> hiveserver2-site.xml -> '--hiveconf' 命令行參數
+在 $HIVE_HOME/conf 裏面還有一個默認的配置文檔 hive-default.xml.template ，這裏存儲了默認的參數，通過複製該默認配置模板，並命名為hive-site.xml，用於配置新的參數
+
+cp $HIVE_HOME/conf/hive-default.xml.template $HIVE_HOME/conf/hive-site.xml
+在配置hive-site.xml之前，要先做一些準備工作
+
+首先，在HDFS上新建文檔夾
+a、臨時文檔夾，默認map-reduce臨時的中轉路徑是hdfs上的/tmp/hive-<username>，因此，如果hdfs上沒有/tmp臨時文檔夾，則新建並授權
+
+hadoop fs -mkdir /tmp
+hadoop fs -chmod g+w /tmp
+b、創建hive數據倉庫目錄，默認是存放在hdfs上的/user/hive/warehouse目錄，新建並授權
+
+hadoop fs -mkdir /user/hive
+hadoop fs -mkdir /user/hive/warehouse
+hadoop fs -chmod g+w /user/hive
+hadoop fs -chmod g+w /user/hive/warehouse
+其次，安裝mysql用於存儲hive的元數據
+hive 默認使用Derby作為Hive metastore的存儲數據庫，這個數據庫更多用於單元測試，只支持一個用户訪問，在生產環境，建議改成功能更強大的關係型數據庫，根據 官網的介紹 ，支持用於存儲hive元數據的數據庫如下：
+
+hive元數據支持的數據庫	最低版本要求
+MySQL	5.6.17
+Postgres	9.1.13
+Oracle	11g
+MS SQL Server	2008 R2
+由於元數據的數據量都比較小，一般都以安裝mysql來存儲元數據。下面將介紹mysql的安裝配置
+
+a、到MySQL官網打開 MySQL 社區版下載頁面 ，然後下載以下的MySQL rpm安裝包
+
+下載 mysql-community-server-5.7.18-1.el6.x86_64.rpm
+下載  mysql-community-client-5.7.18-1.el6.x86_64.rpm
+下載  mysql-community-devel-5.7.18-1.el6.x86_64.rpm
+下載  mysql-community-common-5.7.18-1.el6.x86_64.rpm
+下載  mysql-community-libs-5.7.18-1.el6.x86_64.rpm
+下載  mysql-community-libs-compat-5.7.18-1.el6.x86_64.rpm
+b、MySQL官網有介紹 MySQL rpm包的安裝方法 ，一般需要安裝 mysql-community-server, mysql-community-client, mysql-community-libs, mysql-community-common, and mysql-community-libs-compat 這些包。在MySQL服務端至少安裝 mysql-community-{server,client,common,libs}-* 軟件 包，在MySQL客户端至少安裝 mysql-community-{client,common,libs}-* 軟件包
+
+在安裝之前，先查看一下，系統之前是否有安裝過mysql相關的包，如果有，則卸載掉，輸入指令查詢
+
+rpm -qa|grep mysql
+在本實驗中，由於在docker裏面的centos6安裝，由於是centos6精簡環境，還需要安裝一些相應的依賴包，如下
+
+yum install -y perl libaio numactl.x86_64
+接下來，按順序安裝mysql 的 rpm包，由於這幾個rpm包有依賴關係，因此，安裝時按以下順序逐個安裝
+
+rpm -ivh mysql-community-common-5.7.18-1.el6.x86_64.rpm
+rpm -ivh mysql-community-libs-5.7.18-1.el6.x86_64.rpm
+rpm -ivh mysql-community-libs-compat-5.7.18-1.el6.x86_64.rpm
+rpm -ivh mysql-community-client-5.7.18-1.el6.x86_64.rpm
+rpm -ivh mysql-community-devel-5.7.18-1.el6.x86_64.rpm
+rpm -ivh mysql-community-server-5.7.18-1.el6.x86_64.rpm
+c、全部安裝完成後，則使用 service mysqld start 啟動mysql服務，首次啟動時，mysql 數據庫還會進行初始化，並生成root的初始密碼
+
+[root@31d48048cb1e ahadoop]# service mysqld start
+Initializing MySQL database:                               [  OK  ]
+Installing validate password plugin:                       [  OK  ]
+Starting mysqld:                                           [  OK  ]
+d、在日誌裏面獲取root初始密碼，使用以下命令
+
+[root@31d48048cb1e ahadoop]# grep 'temporary password' /var/log/mysqld.log
+2017-06-23T04:04:40.322567Z 1 [Note] A temporary password is generated for root@localhost: g1hK=pYBo(x9
+其中，最後的 g1hK=pYBo(x9 就是初始密碼（隨機產生的，每次安裝不一樣的哦）
+
+使用初始密碼，登錄mysql並修改root密碼為 Test.123
+
+mysql -u root -p
+
+mysql> ALTER USER 'root'@'localhost' IDENTIFIED BY 'Test.123';
+【注意】MySQL 默認會開啟強密碼驗證（MySQL's validate_password plugin is installed by default），要求密碼長度至少8個字符，包含至少1個大寫、1個小寫、1個數字、1個特殊字符。
+
+e、修改數據庫的字符集，查看默認的字符集
+
+mysql> SHOW VARIABLES like 'character%';
+
++--------------------------+----------------------------+
+| Variable_name            | Value                      |
++--------------------------+----------------------------+
+| character_set_client     | utf8                       |
+| character_set_connection | utf8                       |
+| character_set_database   | latin1                     |
+| character_set_filesystem | binary                     |
+| character_set_results    | utf8                       |
+| character_set_server     | latin1                     |
+| character_set_system     | utf8                       |
+| character_sets_dir       | /usr/share/mysql/charsets/ |
++--------------------------+----------------------------+
+8 rows in set (0.00 sec)
+可以看出，database、server的字符集為latin1，如果後面在建數據庫、數據表時，沒有指定utf8，輸入中文會變成亂碼。MySQL 官網有介紹了 更改字符集的方法 ，修改 mysql 的配置文檔
+
+vi /etc/my.cnf
+
+# 在 [mysqld] 下面加上這個配置
+[mysqld]
+character-set-server=utf8
+
+# 如果 client 默認不是 utf8，要改成 utf8 則在 [client] 中加上這個配置
+[client]
+default-character-set=utf8
+更改好配置文檔後，保存退出，重啟 mysql
+
+service mysqld restart
+再查看數據庫的字符集，已變成utf8，如下
+
+mysql> SHOW VARIABLES like 'character%';
++--------------------------+----------------------------+
+| Variable_name            | Value                      |
++--------------------------+----------------------------+
+| character_set_client     | utf8                       |
+| character_set_connection | utf8                       |
+| character_set_database   | utf8                       |
+| character_set_filesystem | binary                     |
+| character_set_results    | utf8                       |
+| character_set_server     | utf8                       |
+| character_set_system     | utf8                       |
+| character_sets_dir       | /usr/share/mysql/charsets/ |
++--------------------------+----------------------------+
+8 rows in set (0.00 sec)
+f、創建用於存儲hive元數據庫的數據庫、賬號密碼
+
+使用mysql的root賬號進入mysql後，創建數據庫 hivedb，賬號 hive，密碼 Test.123
+
+create database hivedb;
+GRANT ALL ON hivedb.* TO 'hive'@'localhost' IDENTIFIED BY 'Test.123';
+flush privileges;
+到此，存儲hive元數據的mysql已經搭建完成。
+
+接下來，將繼續配置hive-site.xml，使用mysql進行存儲， hive官網有説明文檔
+
+# 複製 hive 的默認配置模板文檔為 hive-site.xml
+cp $HIVE_HOME/conf/hive-default.xml.template $HIVE_HOME/conf/hive-site.xml
+
+# 複製 mysql 驅動包到 lib 目錄
+mv mysql-connector-java-6.0.6-bin.jar $HIVE_HOME/lib/
+編輯hive_site.xml，修改jdbc鏈接（hd1為mysql server的主機名）、驅動、賬號、密碼、數據倉庫默認路徑（hdfs）等信息，如下：
+
+<property>
+    <name>javax.jdo.option.ConnectionURL</name>
+    <value>jdbc:mysql://hd1:3306/hivedb?createDatabaseIfNotExist=true</value>
+    <description>
+      JDBC connect string for a JDBC metastore.
+      To use SSL to encrypt/authenticate the connection, provide database-specific SSL flag in the connection URL.
+      For example, jdbc:postgresql://myhost/db?ssl=true for postgres database.
+    </description>
+</property>
+
+ <property>
+    <name>javax.jdo.option.ConnectionDriverName</name>
+    <value>com.mysql.jdbc.Driver</value>
+    <description>Driver class name for a JDBC metastore</description>
+  </property>
+
+  <property>
+    <name>javax.jdo.option.ConnectionUserName</name>
+    <value>hive</value>
+    <description>Username to use against metastore database</description>
+  </property>
+
+  <property>
+    <name>javax.jdo.option.ConnectionPassword</name>
+    <value>Test.123</value>
+    <description>password to use against metastore database</description>
+  </property>
+
+  <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>/user/hive/warehouse</value>
+    <description>location of default database for the warehouse</description>
+  </property>
+在完成基本配置後，還有以下幾點需要注意的
+
+a、按 官網文檔 ，還強烈推薦在hive-site.xml中配置datanucleus.autoStartMechanism項，以解決 多併發讀取失敗的問題（HIVE-4762） ，配置如下
+
+<property>
+   <name>datanucleus.autoStartMechanism</name>
+   <value>SchemaTable</value>
+</property>
+b、在hive-site.xml中再配置元數據認證為false，否則啟動時會報以下異常
+
+Caused by: MetaException(message:Version information not found in metastore. )
+配置如下
+
+<property>
+   <name>hive.metastore.schema.verification</name>
+   <value>false</value>
+   <description>  
+    Enforce metastore schema version consistency.  
+    True: Verify that version information stored in metastore matches with one from Hive jars.  Also disable automatic schema migration attempt. Users are required to manully migrate schema after Hive upgrade which ensures proper metastore schema migration. (Default)  
+    False: Warn if the version information stored in metastore doesn't match with one from in Hive jars.  
+    </description>  
+</property>
+當配置為true時，則表示會強制metastore的版本信息與hive jar 一致。 （這裏很奇怪，使用hive官網下載的包來解壓安裝，按理metastore的版本信息應該是會和hive jar一致的，怎麼設置為true會報異常呢）
+
+c、配置 io 臨時目錄，否則會報異常
+
+Exception in thread "main" java.lang.IllegalArgumentException: java.net.URISyntaxException: Relative path in absolute URI: ${system:java.io.tmpdir%7D/$%7Bsystem:user.name%7D
+ at org.apache.hadoop.fs.Path.initialize(Path.java:254)
+ at org.apache.hadoop.fs.Path.<init>(Path.java:212)
+ at org.apache.hadoop.hive.ql.session.SessionState.createSessionDirs(SessionState.java:644)
+ at org.apache.hadoop.hive.ql.session.SessionState.start(SessionState.java:563)
+ at org.apache.hadoop.hive.ql.session.SessionState.beginStart(SessionState.java:531)
+ at org.apache.hadoop.hive.cli.CliDriver.run(CliDriver.java:705)
+ at org.apache.hadoop.hive.cli.CliDriver.main(CliDriver.java:641)
+ at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+ at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:62)
+ at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+ at java.lang.reflect.Method.invoke(Method.java:498)
+ at org.apache.hadoop.util.RunJar.run(RunJar.java:234)
+ at org.apache.hadoop.util.RunJar.main(RunJar.java:148)
+Caused by: java.net.URISyntaxException: Relative path in absolute URI: ${system:java.io.tmpdir%7D/$%7Bsystem:user.name%7D
+ at java.net.URI.checkPath(URI.java:1823)
+ at java.net.URI.<init>(URI.java:745)
+ at org.apache.hadoop.fs.Path.initialize(Path.java:251)
+ ... 12 more
+這是因為在hive-site.xml中使用了變量${system:java.io.tmpdir}為表示io臨時目錄，但沒有指定這個變量的值，也即沒有指定io臨時目錄的路徑，因此會報異常。
+
+創建io臨時目錄
+# 切換到hwi目錄
+cd apache-hive-2.1.1-src/hwi
+
+# 將 web 目錄下的 jsp 頁面打包成 war 格式，輸入文檔格式為 hive-hwi-${version}.war
+jar cfM hive-hwi-2.1.1.war -C web .
+（3）將war包複製到hive-lib目錄
+
+cp apache-hive-2.1.1-src/hwi/hive-hwi-2.1.1.war $HIVE_HOME/lib/
+（4）啟動 hwi
+
+輸入指令啟動 hwi
+
+hive --service hwi &
+結果報異常，無法啟動
+
+[ahadoop@31d48048cb1e ~]$ hive --service hwi &
+[1] 3192
+[ahadoop@31d48048cb1e ~]$ which: no hbase in (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/ahadoop/bin:/usr/java/jdk1.8.0_131/bin:/home/ahadoop/hadoop-2.8.0/bin:/home/ahadoop/hadoop-2.8.0/sbin:/home/ahadoop/zookeeper-3.4.10/bin:/home/ahadoop/apache-hive-2.1.1-bin/bin)
+SLF4J: Class path contains multiple SLF4J bindings.
+SLF4J: Found binding in [jar:file:/home/ahadoop/apache-hive-2.1.1-bin/lib/log4j-slf4j-impl-2.4.1.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J: Found binding in [jar:file:/home/ahadoop/hadoop-2.8.0/share/hadoop/common/lib/slf4j-log4j12-1.7.10.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J: See http://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J: Actual binding is of type [org.apache.logging.slf4j.Log4jLoggerFactory]
+
+[1]+  Exit 1                  hive --service hwi
+[ahadoop@31d48048cb1e ~]$ tail /tmp/ahadoop/hive.log
+2017-06-25T00:37:39,289  INFO [main] hwi.HWIServer: HWI is starting up
+2017-06-25T00:37:39,328  INFO [main] conf.HiveConf: Found configuration file file:/home/ahadoop/apache-hive-2.1.1-bin/conf/hive-site.xml
+2017-06-25T00:37:40,651 ERROR [main] hwi.HWIServer: HWI WAR file not found at /home/ahadoop/apache-hive-2.1.1-bin//home/ahadoop/apache-hive-2.1.1-bin/lib/hive-hwi-2.1.1.war
+該異常是找不到 war 文檔，其原因是hwi啟動腳本（$HIVE_HOME/bin/ext/hwi.sh）的bug，hwi.sh裏面用的是完整路徑，而HWIServer類中的代碼用的相對路徑：
+
+String hwiWAR = conf.getVar(HiveConf.ConfVars.HIVEHWIWARFILE);
+String hivehome = System.getenv().get("HIVE_HOME");
+File hwiWARFile = new File(hivehome, hwiWAR);
+if (!hwiWARFile.exists()) {
+    l4j.fatal("HWI WAR file not found at " + hwiWARFile.toString());
+    System.exit(1);
+}
+因此，會報錯。通過修改hive-site.xml，將hive.hwi.war.file的路徑改為相對路徑，與HWIServer類的代碼一致，則可避免這個問題
+
+vi $HIVE_HOME/conf/hive-site.xml
+
+<property>
+   <name>hive.hwi.war.file</name>
+   <value>lib/hive-hwi-2.1.1.war</value>
+</property>
+再次啟動後，仍然報錯
+
+When initializing hive with no arguments, the CLI is invoked. Hive has an extension architecture used to start other hive demons.
+Jetty requires Apache Ant to start HWI. You should define ANT_LIB as an environment variable or add that to the hive invocation.
+原因是hwi使用Jetty作為web容器，而該容器需要Apache Ant才能啟動，因此還需要安裝Apache Ant
+
+a、從Apache Ant官網下載壓縮包（ apache-ant-1.10.1-bin.tar.gz ）
+
+b、解壓
+
+tar -zxvf apache-ant-1.10.1-bin.tar.gz
+c、配置環境變量
+
+vi .bash_profile
+
+export ANT_HOME=/home/ahadoop/apache-ant-1.10.1
+export ANT_LIB=$ANT_HOME/lib
+export CLASSPATH=$CLASSPATH:$ANT_LIB
+export PATH=$PATH:$ANT_HOME/bin
+執行 source .bash_profile 使環境變量生效
+
+完成了 apache ant 安裝後，再次啟動 hwi
+
+hive --service hwi &
+已經可順序啟動了，通過在瀏覽器輸入網站  http://172.17.0.1:9999/hwi  訪問 hwi 頁面，仍然報錯，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+這個頁面報錯是
+
+Unable to find a javac compiler;
+com.sun.tools.javac.Main is not on the classpath.
+Perhaps JAVA_HOME does not point to the JDK
+明明已經在環境變量中配置了JAVA_HOME，怎麼還會報錯呢，經查，是由於$HIVE_HOME/lib下沒有tools.jar所致，因此，對 $JAVA_HOME/lib/tools.jar 創建一個軟鏈接到 $HIVE_HOME/lib
+
+ln -s $JAVA_HOME/lib/tools.jar $HIVE_HOME/lib/
+重新啟動 hive --service hwi & 之後，再訪問  http://172.17.0.1:9999/hwi  ，還是報錯，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+報異常信息
+
+The following error occurred while executing this line:
+jar:file:/home/ahadoop/apache-hive-2.1.1.bin/lib/ant-1.9.1.jar!/org/apache/tools/ant/antlib.xml:37:Could not create task or type of type:componentdef.
+
+Ant could not find the task or a class this task relies upon.
+經查，主要是 ant 版本的問題導致的，$HIVE_HOME/lib下的ant.jar版本為1.9.1，而剛才新安裝的ant版本為1.10.1，因此，需要把{ANT_HOME}/lib下的ant.jar包copy到${HIVE_HOME}/lib下
+
+cp ${ANT_HOME}/lib/ant.jar  ${HIVE_HOME}/lib/ant-1.10.1.jar
+重新啟動 hive --service hwi & 之後，再訪問   http://172.17.0.1:9999/hwi  頁面，終於可正常訪問了
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+點擊左邊菜單 Browse Schema 可查看數據表情況
+
+點擊左邊菜單 Create Session 可創建一個會話（會話名 test），如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+點擊左邊菜單 List Sessions 可顯示會話列表，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+點擊  Manager 按鈕可進入該會話的管理頁面，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+在會話管理頁面中，可執行hql腳本。在 Result File 中輸入個結果文檔名，在 Query 編輯框中輸入 hql 腳本（本實驗的腳本為 select * from testdb.tmp_test4），在 Start Query 中選擇 YES，然後點擊下方的 Submit 按鈕提交會話，即可執行 hql 腳本。執行後，點擊 Result File 編輯框右邊的 View File 按鈕，可查看運行結果，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+從上面使用 hwi 的過程可以看出，執行 hql 腳本的過程沒有任何提示，不知道某一個查詢執行是什麼時候結束的，只能在服務端才可以看到執行過程日誌信息，而且使用起來也不是很方便。針對數據分析人員，一般還是建議用CLI操作Hive，效率比較高。
+
+（5）關於 hive metastore 的問題
+按官網的介紹，不管是使用Hive CLI、客户端還是HWI訪問Hive，都需要首先啟動Hive 元數據服務，否則無法訪問Hive數據庫。否則會報異常
+
+15/01/09 16:37:58 INFO hive.metastore: Trying to connect to metastore with URI thrift://172.17.0.1:9083  
+15/01/09 16:37:58 WARN hive.metastore: Failed to connect to the MetaStore Server...  
+15/01/09 16:37:58 INFO hive.metastore: Waiting 1 seconds before next connection attempt.
+使用 hive --service metastore 命令即可啟動 metastore 服務
+
+[ahadoop@31d48048cb1e ~]$ hive --service metastore  
+Starting Hive Metastore Server  
+15/01/09 16:38:52 INFO Configuration.deprecation: mapred.reduce.tasks is deprecated. Instead, use mapreduce.job.reduces  
+15/01/09 16:38:52 INFO Configuration.deprecation: mapred.min.split.size is deprecated. Instead, use mapreduce.input.fileinputformat.split.minsize  
+15/01/09 16:38:52 INFO Configuration.deprecation: mapred.reduce.tasks.speculative.execution is deprecated. Instead, use mapreduce.reduce.speculative  
+15/01/09 16:38:52 INFO Configuration.deprecation: mapred.min.split.size.per.node is deprecated. Instead, use mapreduce.input.fileinputformat.split.minsize.per.node  
+15/01/09 16:38:52 INFO Configuration.deprecation: mapred.input.dir.recursive is deprecated. Instead, use mapreduce.input.fileinputformat.input.dir.recursive
+但在本實驗中，不啟動 metastore 服務也能通過 hwi 正常訪問 hive 裏面的數據，可能跟新版本的機制有關
+
+5、安裝配置 HCatalog
+HCatalog是Hadoop的元數據和數據表的管理系統，它是基於Hive的元數據層，通過類SQL的語言展現Hadoop數據的關聯關係，支持Hive、Pig、MapReduce等共享數據和元數據，使用户在編寫應用進程時無需關心數據是怎麼存儲、存在哪裏，避免用户因schema和存儲格式的改變而受到影響。HCatalog的這種靈活性，使得在不影響到用户的應用進程讀取數據的情況下，數據產生者可以在數據中增加新列。在不影響生產者或用户的情況下，管理員可以遷移數據或是改變數據的存儲格式。如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+從上圖可看出，HCatalog低層支持多種文檔格式的數據存儲方法，上層支持Pig、MapReduce、Hive、Streaming等多種應用。
+
+這樣的好處在於，可以支持不同的工具集和系統能在一起使用，例如數據分析團隊，一開始可能只使用一種工具（如Hive，Pig，Map Reduce），而隨着數據分析工作的深入，需要多種工具相結合，如剛開始使用Hive進行分析查詢的用户，後面還需要使用Pig為ETL過程處理或創建數據模型；剛開始使用Pig的用户發現，他們更想使用Hive進行分析查詢。在這些情況下，通過HCatalog提供了元數據之間的共享，使用户更方便的在不同工具間切換操作，比如在 Map Reduce或Pig中載入數據並進行規範化，然後通過Hive進行分析，當這些工具都共享一個metastore時，各個工具的用户就能夠即時訪問其他工具創建的數據，而無需載入和傳輸的步驟，非常高效、方便。
+
+Apache Hive has a detailed description of HCatalog . After the hive 0.11.0 version, the hive installation package provides hcatalog, that is, after installing hive, there is already hcatalog inside ( official website description ). Next, I will show you how to configure to use HCatalog.
+
+(1) Configuring environment variables
+Vi ~/.bash_profile
+
+Export PATH=$PATH:$HIVE_HOME/hcatalog/bin:$HIVE_HOME/hcatalog/sbin
+
+# Use environment variables to take effect
+Source ~/.bash_profile
+(2) Start hcatalog
+Hcat_server.sh start &
+After startup, the process reports an error as follows
+
+Started metastore server init, testing if initialized correctly...
+/usr/local/hive/hcatalog/sbin/hcat_server.sh: line 91: /usr/local/hive/hcatalog/sbin/../var/log/hcat.out: No such file or directory.Metastore startup failed, See /usr/local/hive/hcatalog/sbin/../var/log/hcat.err
+The error is that the log path does not exist (similar to the hwi relative path and absolute path described earlier). At this time, specify a path for the hive user to have write permission, and then specify the path in the startup script HCAT_LOG_DIR in the startup script, as follows:
+
+# Create a log directory, such as /tmp/ahadoop/hcat
+Mkdir /tmp/ahadoop/hcat
+
+# Specify the log directory at the beginning of the hcat_server.sh file (plus the following export directive)
+Vi ${HIVE_HOME}/hcatalog/sbin/hcat_server.sh  
+
+Export HCAT_LOG_DIR=/tmp/ahadoop/hcat
+After restarting hcat_server.sh start, or report an exception
+
+After investigation, it is a port conflict. If hive --service metastore & has been turned on, it will occupy port 9083. When hcat_server.sh start is enabled, the metastore service will be re-opened, using port 9083. This is because the purpose of hcatalog is to manage the metadata, so you will open the metastore service to manage the metadata, and if other applications also start the metastore service, it may cause inconsistency.
+
+After the hive --service metastore service is finished, start hcat_server.sh start & to start hcat_server successfully.
+
+[ahadoop@31d48048cb1e ~]$ hcat_server.sh start &
+[2] 6763
+[ahadoop@31d48048cb1e ~]$ Started metastore server init, testing if initialized correctly...
+Metastore initialized successfully on port[9083].
+
+[2]+ Done hcat_server.sh start
+Hcat is the client operation entry of hcatalog, and the official website has introduced the detailed use ( hcatalog client command official website introduction )
+
+Use hcat -e to execute commands for metadata operations (using SQL statements, very convenient), for example
+
+Hcat -e"show databases"
+hcat -e"show tables"
+hcat -e"create table tmp_test5(a string,b int)"
+hcat -e"desc tmp_test5"
+hcat -e"drop table tmp_test5"
+創建/修改/刪除數據表，查看數據表結構等等，這些跟元數據相關的DDL語句都是支持的。以下語句就不支持：
+
+ALTER INDEX ... REBUILD
+
+CREATE TABLE ... AS SELECT
+
+ALTER TABLE ... CONCATENATE
+
+ALTER TABLE ARCHIVE/UNARCHIVE PARTITION
+
+ANALYZE TABLE ... COMPUTE STATISTICS
+
+IMPORT FROM ...
+
+EXPORT TABLE
+
+另外，如果執行 hcat -e"select * from tmp_test5"，也是不支持的，因為hcatalog主要是用來管理元數據的，而不是分析使用的，因此，不能跟hive等同
+
+使用 hcat_server.sh stop 可停止 hcatalog 服務
+
+hcat_srever.sh stop
+6、WebHCat
+WebHCat是為HCatalog提供REST API的服務，自hive 0.11.0 版本之後，hive 中也自帶了 webhcat （ 官網介紹説明 ），如下圖，通過WebHCat，進程能夠通過REST的API很安全的鏈接和操作HCatalog提供的服務，方便Hive、Pig、MapReduce等應用使用。（類似於通過WebHDFS以web的方式來操作HDFS）
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+使用以下命令啟動 webhcat，默認的web端口為50111（須先啟動 hcat_srever.sh start）
+
+webhcat_server.sh start &
+（1）在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/status 可查看 hcatalog 的狀態，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+（2）在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/version/hive 可查看 hive 的版本，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+（3）在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/version/hadoop 可查看 hadoop 的版本，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+（4）在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database 查看元數據的數據庫信息，但卻報錯了，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+這是因為像ddl這些操作，需要指定用户，因此，指定使用賬號（hcat所在linux服務器的賬號ahadoop）
+
+在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database?user.name=ahadoop 查看元數據的數據庫信息，還是報錯了，如下圖
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+報錯信息為  {"error":"Unable to access program:${env.PYTHON_CMD}"}，識別不到 python 路徑
+
+這時配置環境變量
+
+vi ~/.bash_profile
+
+export PYTHON_CMD=/usr/bin/python
+
+
+# 使用環境變量生效
+source ~/.bash_profile
+重新啟動 webhcat
+
+[ahadoop@31d48048cb1e ~]$ webhcat_server.sh stop
+Lenght of string is non zero
+webhcat: stopping ...
+webhcat: stopping ... stopped
+webhcat: done
+[ahadoop@31d48048cb1e ~]$ webhcat_server.sh start &
+[2] 3758
+[ahadoop@31d48048cb1e ~]$ Lenght of string is non zero
+webhcat: starting ...
+webhcat: /home/ahadoop/hadoop-2.8.0/bin/hadoop jar /home/ahadoop/apache-hive-2.1.1-bin/hcatalog/sbin/../share/webhcat/svr/lib/hive-webhcat-2.1.1.jar org.apache.hive.hcatalog.templeton.Main  
+webhcat: starting ... started.
+webhcat: done
+
+[2]+  Done                    webhcat_server.sh start
+在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database?user.name=ahadoop 查看元數據的數據庫信息，繼續報錯，錯誤信息為
+
+/home/ahadoop/hadoop-2.8.0/bin/hadoop: line 27: /home/ahadoop/../libexec/hadoop-config.sh:No such file or directory\n/home/ahadoop/hadoop-2.8.0/bin/hadoop: line 166:exec:: not found\n"
+這是提示找不到 libexec 的路徑，這時，根據提示，編輯 hadoop 執行文檔的27行，進行以下修改
+
+# 編輯 hadoop 可執行文檔
+vi $HADOOP_HOME/bin/hadoop
+
+# 定位到26行，將 HADOOP_LIBEXEC_DIR 註釋掉 
+# HADOOP_LIBEXEC_DIR=${HADOOP_LIBEXEC_DIR:-$DEFAULT_LIBEXEC_DIR}
+
+# 然後增加1行，寫上 HADOOP_LIBEXEC_DIR 路徑
+HADOOP_LIBEXEC_DIR=$HADOOP_HOME/libexec
+重新啟動 webhcat
+
+[ahadoop@31d48048cb1e ~]$ webhcat_server.sh stop
+Lenght of string is non zero
+webhcat: stopping ...
+webhcat: stopping ... stopped
+webhcat: done
+[ahadoop@31d48048cb1e ~]$ webhcat_server.sh start &
+[2] 3758
+[ahadoop@31d48048cb1e ~]$ Lenght of string is non zero
+webhcat: starting ...
+webhcat: /home/ahadoop/hadoop-2.8.0/bin/hadoop jar /home/ahadoop/apache-hive-2.1.1-bin/hcatalog/sbin/../share/webhcat/svr/lib/hive-webhcat-2.1.1.jar org.apache.hive.hcatalog.templeton.Main  
+webhcat: starting ... started.
+webhcat: done
+
+[2]+  Done                    webhcat_server.sh start
+然後，在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database?user.name=ahadoop 查看元數據的數據庫信息，還是繼續報錯（ 暈，心中萬馬奔騰啊…… ）
+
+{"statement":"show databases like 't*';","error":"unable to show databases for: t*","exec":{"stdout":"","stderr":"which: no /home/ahadoop/hadoop-2.8.0/bin/hadoop in ((null))\ndirname: missing operand\nTry `dirname --help' for more information.\nSLF4J: Class path contains multiple SLF4J bindings.\nSLF4J: Found binding in [jar:file:/home/ahadoop/hadoop-2.8.0/share/hadoop/common/lib/slf4j-log4j12-1.7.10.jar!/org/slf4j/impl/StaticLoggerBinder.class]\nSLF4J: Found binding in [jar:file:/home/ahadoop/apache-hive-2.1.1-bin/lib/log4j-slf4j-impl-2.4.1.jar!/org/slf4j/impl/StaticLoggerBinder.class]\nSLF4J: See http://www.slf4j.org/codes.html#multiple_bindings for an explanation.\nSLF4J: Actual binding is of type [org.slf4j.impl.Log4jLoggerFactory]\n17/06/28 03:03:50 INFO conf.HiveConf: Found configuration file file:/home/ahadoop/apache-hive-2.1.1-bin/conf/hive-site.xml\n17/06/28 03:03:54 WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable\n17/06/28 03:03:54 INFO metastore.HiveMetaStore: 0: Opening raw store with implementation class:org.apache.hadoop.hive.metastore.ObjectStore\n17/06/28 03:03:54 INFO metastore.ObjectStore: ObjectStore, initialize called\n17/06/28 03:03:54 INFO DataNucleus.Persistence: Property hive.metastore.integral.jdo.pushdown unknown - will be ignored\n17/06/28 03:03:54 INFO DataNucleus.Persistence: Property datanucleus.cache.level2 unknown - will be ignored\n17/06/28 03:03:56 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MSerDeInfo since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MPartition since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MColumnDescriptor since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MTablePrivilege since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MGlobalPrivilege since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MTable since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MPartitionColumnStatistics since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MRole since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MTableColumnStatistics since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MStringList since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MFunction since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MDatabase since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MStorageDescriptor since it was managed previously\n17/06/28 03:03:57 INFO DataNucleus.Persistence: Managing Persistence of org.apache.hadoop.hive.metastore.model.MVersionTable since it was managed previously\n17/06/28 03:03:57 INFO metastore.ObjectStore: Setting MetaStore object pin classes with hive.metastore.cache.pinobjtypes=\"Table,StorageDescriptor,SerDeInfo,Partition,Database,Type,FieldSchema,Order\"\n17/06/28 03:03:57 INFO metastore.MetaStoreDirectSql: Using direct SQL, underlying DB is MYSQL\n17/06/28 03:03:57 INFO metastore.ObjectStore: Initialized ObjectStore\n17/06/28 03:03:58 INFO metastore.HiveMetaStore: Added admin role in metastore\n17/06/28 03:03:58 INFO metastore.HiveMetaStore: Added public role in metastore\n17/06/28 03:03:58 INFO metastore.HiveMetaStore: No user is added in admin role, since config is empty\n17/06/28 03:03:58 INFO metastore.HiveMetaStore: 0: get_all_functions\n17/06/28 03:03:58 INFO HiveMetaStore.audit: ugi=ahadoop\tip=unknown-ip-addr\tcmd=get_all_functions\t\n Command  was terminated due to timeout(10000ms).  See templeton.exec.timeout property","exitcode":143}}
+根據提示，是用户的問題，因此，跟 hcatalog 的配置一樣，設置超級代理用户（使用webhcat所在的服務器linux賬號ahadoop）
+
+cp $HIVE_HOME/hcatalog/etc/webhcat/webhcat-default.xml $HIVE_HOME/hcatalog/etc/webhcat/webhcat-site.xml
+vi $HIVE_HOME/hcatalog/etc/webhcat/webhcat-site.xml
+
+# 修改以下兩個配置項，將用户名 ahadoop 寫在 proxyuser 後面。
+<property>
+  <name>webhcat.proxyuser.ahadoop.hosts</name>
+  <value>*</value>
+</property>
+<property>
+  <name>webhcat.proxyuser.ahadoop.groups</name>
+  <value>*</value>
+</property>
+
+# 修改超時時間，默認為10秒，改長一些，否則後面還會報超時
+<property>
+  <name>templeton.exec.timeout</name>
+  <value>60000</value>
+  <description>
+    How long in milliseconds a program is allowed to run on the
+    Templeton box.
+  </description>
+</property>
+完成配置後，再重新啟動webhcat
+
+[ahadoop@31d48048cb1e ~]$ webhcat_server.sh stop
+Lenght of string is non zero
+webhcat: stopping ...
+webhcat: stopping ... stopped
+webhcat: done
+[ahadoop@31d48048cb1e ~]$ webhcat_server.sh start &
+[2] 3758
+[ahadoop@31d48048cb1e ~]$ Lenght of string is non zero
+webhcat: starting ...
+webhcat: /home/ahadoop/hadoop-2.8.0/bin/hadoop jar /home/ahadoop/apache-hive-2.1.1-bin/hcatalog/sbin/../share/webhcat/svr/lib/hive-webhcat-2.1.1.jar org.apache.hive.hcatalog.templeton.Main  
+webhcat: starting ... started.
+webhcat: done
+
+[2]+  Done                    webhcat_server.sh start
+在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database?user.name=ahadoop 查看元數據的數據庫信息，終於可以正常訪問了
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+如果需要加篩選條件，則在url後面加上like，例如篩選以t開頭的數據庫名稱，則在瀏覽器中輸入
+
+http://172.17.0.1:50111/templeton/v1/ddl/database?user.name=ahadoop&like=t*
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+（5）查看某個數據庫的信息，則在database後面指定數據庫名（如本實驗的testdb數據庫），在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database/testdb?user.name=ahadoop
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+（6）查看某個數據庫裏面所有數據表的信息，則需要加上table關鍵字（如本實驗的testdb數據庫），在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database/testdb/table?user.name=ahadoop
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+（7）查看某個數據庫、某張表的信息，則需要加上數據表名（如本實驗的testdb數據庫、tmp_test3數據表），在瀏覽器輸入 http://172.17.0.1:50111/templeton/v1/ddl/database/testdb/table/tmp_test3?user.name=ahadoop
+
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+每日一博 | Apache Hive 2.1.1 安裝配置超詳細過程
+（8）使用 webhcat_server.sh stop 可終止 webhcat 服務
+
+webhcat_server.sh stop
+6、結語
+通過以上的配置，完成了 hive、beeline、hwi、HCatalog、WebHCat 等組件安裝和使用，也瞭解到了他們的功能。hive 目前一直在持續更新版本，期待未來有更多好用的特性，為Hadoop的數據分析處理人員，帶來更高效的工具。
+
+END  Hive 數據庫
+
+ 
+READ THIS
+Hive 官方手冊翻譯 -- Hive Transactions (Hive 事務)
+---
+Hive架構介紹
+---
+hadoop+Kylin服務器搭建教程
+---
+HCatalog and Pig Integration | Accessing Pig With HCatalog
+---
+Best 30 HCatalog Interview Questions and Answers 2018
+---
+安裝和配置Hive
+---
+HCatalog Applications and Its Use Cases
+---
+Kylin系列之一：Kylin的偽分佈式安裝
+---
+值得關注的sql-on-hadoop框架
+---
+hadoop運維問題記錄
+---
+
+Logo  SAOWEN Tech & Programing
+CORECMS ALPHA / RUNTIME 0.173402S
+mkdir /home/ahadoop/hive-data
+mkdir /home/ahadoop/hive-data/tmp
+配置 hive-site.xml 指定 io 臨時目錄的路徑（本實驗使用的linux賬號為ahadoop，可根據實際情況修改）
+
+<property>
+    <name>system:java.io.tmpdir</name>
+    <value>/home/ahadoop/hive-data/tmp</value>
+</property>
+<property>
+    <name>system:user.name</name>
+    <value>ahadoop</value>
+</property>
+經過以上步驟，已經完成了hive-site.xml的配置了
+
+（4）初始化hive元數據庫
+執行以下指令初始化hive元數據庫，否則 mysql 裏面儲存 hive 元數據的數據庫是空的，無法啟動 hive，會報錯
+
+schematool -dbType mysql -initSchema
+（5）啟動 hive
+# 輸入 hive ，啟動 hive
+$ hive
+
+# 查看數據庫
+hive> show databases;
+OK
+default
+Time taken: 1.221 seconds, Fetched: 1 row(s)
+
+# 創建數據庫
+hive> create database testdb;
+OK
+Time taken: 0.362 seconds
+
+# 切換數據庫
+hive> use testdb;
+OK
+Time taken: 0.032 seconds
+
+# 創建數據表
+hive> create table tmp_test(a int,b string) row format delimited fields terminated by '|';
+OK
+Time taken: 0.485 seconds
+
+# 導入數據
+hive> LOAD DATA LOCAL INPATH 'tmp_test' OVERWRITE INTO TABLE tmp_test;
+Loading data to table testdb.tmp_test
+OK
+Time taken: 2.926 seconds
+
+# 查詢數據表
+hive> select * from tmp_test;
+OK
+1 fdsfds
+2 dddd
+3 4fdss
+Time taken: 1.376 seconds, Fetched: 3 row(s)
+創建數據庫、數據表、導入數據、查詢數據等，都能正常執行，説明 hive 已經配置成功了
+
+3、配置使用 beeline
+beeline 是 hive 提供的一個新的命令行工具，基於SQLLine CLI的JDBC客户端，beeline 要與HiveServer2配合使用，支持嵌入模式和遠程模式兩種，也即既可以像hive client一樣訪問本機的hive服務，也可以通過指定ip和端口遠程訪問某個hive服務。hive 官網是推薦使用beeline，它還提供了更為友好的顯示方式（類似mysql client）
+
+a、要使用 beeline ，先把 hiveserver2 啟動起來，默認端口為10000
+
+# 啟動 hiveserver2
+
+$ hiveserver2
+b、使用beeline
+
+# 1、指定要連接的hiveserver2的主機、端口
+beeline -u jdbc:hive2://hd1:10000
+
+# 2、如果是本機的hiveserver2，則可省略主機、端口
+beeline -u jdbc:hive2://
+在連接時，beeline報異常
+
+[ahadoop@31d48048cb1e ~]$ beeline -u jdbc:hive2://hd1:10000
+which: no hbase in (/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/ahadoop/bin:/usr/java/jdk1.8.0_131/bin:/home/ahadoop/hadoop-2.8.0/bin:/home/ahadoop/hadoop-2.8.0/sbin:/home/ahadoop/zookeeper-3.4.10/bin:/home/ahadoop/apache-hive-2.1.1-bin/bin)
+SLF4J: Class path contains multiple SLF4J bindings.
+SLF4J: Found binding in [jar:file:/home/ahadoop/apache-hive-2.1.1-bin/lib/log4j-slf4j-impl-2.4.1.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J: Found binding in [jar:file:/home/ahadoop/hadoop-2.8.0/share/hadoop/common/lib/slf4j-log4j12-1.7.10.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J: See http://www.slf4j.org/codes.html#multiple_bindings for an explanation.
+SLF4J: Actual binding is of type [org.apache.logging.slf4j.Log4jLoggerFactory]
+Connecting to jdbc:hive2://hd1:10000
+17/06/23 10:35:14 [main]: WARN jdbc.HiveConnection: Failed to connect to hd1:10000
+Error: Could not open client transport with JDBC Uri: jdbc:hive2://hd1:10000: Failed to open new session: java.lang.RuntimeException: org.apache.hadoop.ipc.RemoteException(org.apache.hadoop.security.authorize.AuthorizationException): User: ahadoop is not allowed to impersonate anonymous (state=08S01,code=0)
+Beeline version 2.1.1 by Apache Hive
+顯示是本機的linux用户ahadoop，不允許訪問的異常  (org.apache.hadoop.security.authorize.AuthorizationException): User: ahadoop is not allowed to impersonate anonymous
+
+這是由於hadoop 2.0以後引入了一個安全偽裝機制，使得hadoop不允許上層系統（例如hive）直接將實際用户傳遞到hadoop層，而是將實際用户傳遞給一個超級代理，由該代理在hadoop上執行操作，避免任意客户端隨意操作hadoop。因此，將本實驗的linux用户ahadoop，設置為代理用户
+
+在 $HADOOP_HOME/etc/hadoop/core-site.xml 中配置
+
+<property>
+   <name>hadoop.proxyuser.ahadoop.hosts</name>
+   <value>*</value>
+   <description>配置*，表示任意主機。也可以指定是某些主機（主機之間使用英文逗號隔開），如果有指定，則表示超級用户代理功能只支持指定的主機，在其它主機節點仍會報錯</description> 
+</property>
+<property>
+   <name>hadoop.proxyuser.ahadoop.groups</name>
+   <value>*</value>
+   <description>配置*，表示任意組。也可以指定是某個組（組之間使用英文逗號隔開），如果有指定，則表示該組下面的用户可提升為超級用户代理</description>
+</property>
+配置後，重啟hadoop集羣，或者使用以下命令，刷新配置
+
+hdfs dfsadmin –refreshSuperUserGroupsConfiguration
+yarn rmadmin –refreshSuperUserGroupsConfiguration
+
+# 針對 namenode HA 集羣的，兩個 namenode 都要刷新配置
+hadoop dfsadmin -fs hdfs://hd1:8020 –refreshSuperUserGroupsConfiguration
+hadoop dfsadmin -fs hdfs://hd2:8020 –refreshSuperUserGroupsConfiguration
+修改hadoop的core-site.xml配置後，再使用 beeline -u jdbc:hive2:// 重新連接，這時仍然報異常，如下
+
+17/06/24 03:48:58 [main]: WARN Datastore.Schema: Exception thrown obtaining schema column information from datastore
+java.sql.SQLException: Column name pattern can not be NULL or empty.
+ at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:545) ~[mysql-connector-java-6.0.6-bin.jar:6.0.6]
+ at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:513) ~[mysql-connector-java-6.0.6-bin.jar:6.0.6]
+ at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:505) ~[mysql-connector-java-6.0.6-bin.jar:6.0.6]
+ at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:479) ~[mysql-connector-java-6.0.6-bin.jar:6.0.6]
+ at com.mysql.cj.jdbc.DatabaseMetaData.getColumns(DatabaseMetaData.java:2074) ~[mysql-connector-java-6.0.6-bin.jar:6.0.6]
+經查，原因是由於本實驗使用的mysql jdbc驅動是比較高的版本（mysql-connector-java-6.0.6-bin.jar），將其替換為較低的版本（mysql-connector-java-5.1.30-bin.jar）
+
+mv mysql-connector-java-5.1.30-bin.jar $HIVE_HOME/lib/
+rm $HIVE_HOME/lib/mysql-connector-java-6.0.6-bin.jar
+修改配置後，再次使用 beeline -u jdbc:hive2:// 重新連接，就正常了，可順利進入到 beeline 了
+
+[ahadoop@31d48048cb1e ~]$ beeline -u jdbc:hive2://
+
+0: jdbc:hive2://> show databases;
+OK
++----------------+--+
+| database_name  |
++----------------+--+
+| default        |
+| testdb         |
++----------------+--+
+2 rows selected (1.89 seconds)
+0: jdbc:hive2://> use testdb;
+OK
+No rows affected (0.094 seconds)
+0: jdbc:hive2://> show tables;
+OK
++------------+--+
+|  tab_name  |
++------------+--+
+| tmp_test   |
+| tmp_test2  |
++------------+--+
+2 rows selected (0.13 seconds)
+0: jdbc:hive2://> desc tmp_test;
+OK
++-----------+------------+----------+--+
+| col_name  | data_type  | comment  |
++-----------+------------+----------+--+
+| a         | int        |          |
+| b         | string     |          |
++-----------+------------+----------+--+
+2 rows selected (0.308 seconds)
+0: jdbc:hive2://>
+可以看出，其顯示方式與mysql client比較類似
+
+使用完beeline後，使用  !quit 退出 beeline
+
+到此，beeline 成功完成配置
+
+4、配置使用 Hive Web Interface（hwi）
+Hive Web Interface（hwi）是Hive自帶的一個Web GUI，功能不多，可用於展示，查看數據表、執行hql腳本。 官網有較為詳細的介紹 。
+
+由於hive-bin包中並沒有包含hwi的頁面，只有Java代碼編譯好的jar包（hive-hwi-2.1.1.jar），因此，還需要下載hive源代碼，從中提取jsp頁面文檔並打包成war文檔，放到hive-lib目錄中
+
+（1）從apache hive中下載hive源代碼壓縮包： apache-hive-2.1.1-src.tar.gz
+
+（2）解壓並將hwi頁面打包成war
+
+# 解壓源代碼壓縮包
+tar -zxvf apache-hive-2.1.1-src.tar.gz
+
