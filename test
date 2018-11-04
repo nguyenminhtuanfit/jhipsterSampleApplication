@@ -1,0 +1,101 @@
+https://tech.marksblogg.com/billion-nyc-taxi-rides-hive-presto.html
+https://blog.minio.io/presto-modern-interactive-sql-query-engine-for-enterprise-ce56d7aea931
+https://blog.csdn.net/hjw199089/article/details/78848883
+https://www.starburstdata.com/technical-blog/data-lakes-without-hadoop/
+https://github.com/beltran/gohive/blob/master/example/main.go
+one china blog with detail setup
+
+
+package main
+
+import (
+	"fmt"
+	"log"
+ ."github.com/beltran/gohive"
+"context"
+)
+
+
+func main() {
+//	//	conn, err := gohive.Connect("127.0.0.1:10000", gohive.DefaultOptions) // 无用户名、密码
+//	conn, err := gohive.Connect ("http://localhost:10000", gohive.DefaultOptions) // 需要用户名、密码
+//
+////	conn, err := gohive.ConnectWithUser("http://localhost:10002", "username", "password", gohive.DefaultOptions) // 需要用户名、密码
+//	if err != nil {
+//		fmt.Errorf("Connect error %v", err)
+//	}
+//
+//	_, err = conn.Exec("create table if not exists t(c1 int)")
+//	_, err = conn.Exec(" insert into default.t values(1), (2)")
+//	if err != nil {
+//		fmt.Errorf("Connection.Exec error: %v", err)
+//	}
+//	rs, err := conn.Query("select c1 from t limit 10")
+//	if err != nil {
+//		fmt.Errorf("Connection.Query error: %v", err)
+//	}
+//	var c1 int
+//	for rs.Next() {
+//		rs.Scan(&c1)
+//		fmt.Println(c1)
+//	}
+//	conn.Close()
+
+
+	async := false
+	ctx := context.Background()
+	configuration := NewConnectConfiguration()
+	//configuration.Username = "myUsername"
+	// This may not be necessary
+	//configuration.Username = "myPassword"
+	configuration.Service = "hive"
+	configuration.FetchSize = 1000
+	// Previously kinit should have done: kinit -kt ./secret.keytab hive/hs2.example.com@EXAMPLE.COM
+	connection, errConn := Connect("localhost", 10000, "NONE", configuration)
+	if errConn != nil {
+		log.Fatal(errConn)
+	}
+	cursor := connection.Cursor()
+	cursor.Execute(ctx, "CREATE TABLE IF NOT EXISTS myTable(col1 int, col2 string) ROW FORMAT DELIMITED FIELDS TERMINATED BY ',' STORED AS TEXTFILE", async)
+	if cursor.Err != nil {
+		log.Fatal(cursor.Err)
+	}
+	cursor.Execute(ctx, "INSERT INTO myTable VALUES(1, '1'), (2, '2'), (3, '3'), (4, '4')", async)
+
+
+
+
+	//cursor.Execute(ctx, "INSERT INTO myTable VALUES(1, '1'), (2, '2'), (3, '3'), (4, '4')", async)
+	if cursor.Err != nil {
+		log.Fatal(cursor.Err)
+	}
+
+	cursor.Execute(ctx, "SELECT * FROM myTable", async)
+	if cursor.Err != nil {
+		log.Fatal(cursor.Err)
+	}
+
+
+
+	var i int32
+	var s string
+	for cursor.HasMore(ctx) {
+		cursor.FetchOne(ctx, &i, &s)
+		if cursor.Err != nil {
+			log.Fatal(cursor.Err)
+		}
+		log.Println(i, s)
+	}
+
+
+
+	cursor.Execute(ctx, "show databases", async)
+	if cursor.Err != nil {
+		log.Fatal(cursor.Err)
+	}
+fmt.Print(cursor.Description())
+
+
+	cursor.Close()
+	connection.Close()
+}
